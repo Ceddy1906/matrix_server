@@ -1,0 +1,66 @@
+send_message:
+  name: Matrix-Nachricht senden
+  description: Sendet eine Textnachricht an einen konfigurierten Matrix-Raum.
+  fields:
+    room_id:
+      name: Raum
+      description: "Matrix-Raum-ID (z. B. !abc123:matrix.org). Wird beim Einrichten der Integration ausgewählt."
+      required: true
+      example: "!abc123:matrix.org"
+      selector:
+        text:
+    message:
+      name: Nachricht
+      description: Der zu sendende Text.
+      required: true
+      selector:
+        text:
+          multiline: true
+
+ask_question:
+  name: Frage in Matrix-Raum stellen
+  description: >
+    Sendet eine Frage an einen Matrix-Raum und wartet auf eine Antwort.
+    Sobald jemand antwortet (Text oder Emoji-Reaktion), wird das Event
+    'matrix_messenger_response' ausgelöst, das in Automationen verwendet
+    werden kann. Nach Ablauf des Timeouts (Standard 30 min) wird nicht
+    mehr auf eine Antwort gewartet.
+  fields:
+    room_id:
+      name: Raum
+      description: "Matrix-Raum-ID (z. B. !abc123:matrix.org)."
+      required: true
+      example: "!abc123:matrix.org"
+      selector:
+        text:
+    question:
+      name: Frage
+      description: Der Fragetext, der in den Raum gesendet wird.
+      required: true
+      selector:
+        text:
+          multiline: true
+    options:
+      name: Antwortoptionen
+      description: >
+        Optionale Liste gültiger Antworten. Nur Nachrichten oder Emoji-Reaktionen,
+        die einer dieser Optionen entsprechen, werden akzeptiert.
+        Wenn leer, wird jede Antwort akzeptiert.
+      required: false
+      example:
+        - "Ja"
+        - "Nein"
+      selector:
+        object:
+    timeout:
+      name: Timeout (Sekunden)
+      description: Wartezeit in Sekunden. Standard ist 1800 (30 Minuten).
+      required: false
+      default: 1800
+      selector:
+        number:
+          min: 60
+          max: 7200
+          step: 60
+          unit_of_measurement: s
+          mode: box

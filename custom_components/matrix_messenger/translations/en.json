@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Matrix Server",
+        "description": "Connect Home Assistant to your Matrix homeserver.",
+        "data": {
+          "homeserver": "Homeserver URL",
+          "auth_method": "Authentication method"
+        }
+      },
+      "credentials_password": {
+        "title": "Login",
+        "data": {
+          "username": "Matrix User ID (e.g. @user:matrix.org)",
+          "password": "Password",
+          "device_name": "Device name (optional)"
+        }
+      },
+      "credentials_token": {
+        "title": "Access Token",
+        "description": "You can find your access token in your Matrix client under Settings → Security → Sessions.",
+        "data": {
+          "username": "Matrix User ID (e.g. @user:matrix.org)",
+          "access_token": "Access Token"
+        }
+      },
+      "rooms": {
+        "title": "Select Matrix Rooms",
+        "description": "Choose the rooms you want to send messages to.",
+        "data": {
+          "rooms": "Rooms",
+          "enable_sync": "Enable background sync (required to receive replies)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the Matrix server. Please check the URL and credentials.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This Matrix instance is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Matrix Messenger – Options",
+        "data": {
+          "rooms": "Rooms",
+          "enable_sync": "Enable background sync"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Matrix-Server",
+        "description": "Verbinde Home Assistant mit deinem Matrix-Homeserver.",
+        "data": {
+          "homeserver": "Homeserver-URL",
+          "auth_method": "Anmeldeverfahren"
+        }
+      },
+      "credentials_password": {
+        "title": "Anmeldung",
+        "data": {
+          "username": "Matrix-Benutzer-ID (z. B. @nutzer:matrix.org)",
+          "password": "Passwort",
+          "device_name": "Gerätename (optional)"
+        }
+      },
+      "credentials_token": {
+        "title": "Access Token",
+        "description": "Den Access Token findest du in deinem Matrix-Client unter Einstellungen → Sicherheit → Sitzungen.",
+        "data": {
+          "username": "Matrix-Benutzer-ID (z. B. @nutzer:matrix.org)",
+          "access_token": "Access Token"
+        }
+      },
+      "rooms": {
+        "title": "Matrix-Räume",
+        "description": "Wähle die Räume aus, in die Nachrichten gesendet werden sollen.",
+        "data": {
+          "rooms": "Räume",
+          "enable_sync": "Hintergrund-Sync aktivieren (für Antwortempfang)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Matrix-Server fehlgeschlagen. Bitte URL und Zugangsdaten prüfen.",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten."
+    },
+    "abort": {
+      "already_configured": "Diese Matrix-Instanz ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Matrix Messenger – Optionen",
+        "data": {
+          "rooms": "Räume",
+          "enable_sync": "Hintergrund-Sync aktivieren"
+        }
+      }
+    }
+  }
+}
