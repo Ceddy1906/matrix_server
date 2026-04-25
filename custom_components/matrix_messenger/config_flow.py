@@ -203,38 +203,67 @@ class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_rooms(self, user_input=None):
         errors: dict[str, str] = {}
+        has_rooms = bool(self._available_rooms)
+
         if user_input is not None:
             selected = user_input.get(CONF_ROOMS, [])
-            self._data[CONF_ROOMS] = {
-                rid: self._available_rooms[rid]
+            manual_raw = user_input.get("manual_room_ids", "").strip()
+
+            rooms: dict[str, str] = {
+                rid: self._available_rooms.get(rid, rid)
                 for rid in selected
-                if rid in self._available_rooms
+                if rid
             }
-            self._data[CONF_ENABLE_SYNC] = user_input.get(CONF_ENABLE_SYNC, False)
-            return self.async_create_entry(
-                title=self._data.get(CONF_USERNAME, self._data[CONF_HOMESERVER]),
-                data=self._data,
+            for raw in manual_raw.replace(",", " ").split():
+                rid = raw.strip()
+                if rid:
+                    rooms[rid] = rid
+
+            if not rooms:
+                errors["base"] = "no_rooms"
+            else:
+                self._data[CONF_ROOMS] = rooms
+                self._data[CONF_ENABLE_SYNC] = user_input.get(CONF_ENABLE_SYNC, False)
+                return self.async_create_entry(
+                    title=self._data.get(CONF_USERNAME, self._data[CONF_HOMESERVER]),
+                    data=self._data,
+                )
+
+        schema_dict: dict = {}
+
+        if has_rooms:
+            room_options = [
+                selector.SelectOptionDict(value=rid, label=name)
+                for rid, name in self._available_rooms.items()
+            ]
+            schema_dict[vol.Required(CONF_ROOMS)] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=room_options,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+            schema_dict[vol.Optional("manual_room_ids", default="")] = selector.TextSelector(
+                selector.TextSelectorConfig(multiline=False)
+            )
+        else:
+            schema_dict[vol.Required("manual_room_ids")] = selector.TextSelector(
+                selector.TextSelectorConfig(multiline=True)
             )
 
-        room_options = [
-            selector.SelectOptionDict(value=rid, label=f"{name}  ({rid})")
-            for rid, name in self._available_rooms.items()
-        ]
+        schema_dict[vol.Optional(CONF_ENABLE_SYNC, default=False)] = selector.BooleanSelector()
+
+        placeholders = {}
+        if not has_rooms:
+            placeholders["hint"] = (
+                "Keine Räume gefunden. Raum-IDs eingeben (z.B. !abc123:chat.example.com), "
+                "mehrere mit Komma oder Leerzeichen trennen."
+            )
 
         return self.async_show_form(
             step_id="rooms",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_ROOMS): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=room_options,
-                            multiple=True,
-                            mode=selector.SelectSelectorMode.LIST,
-                        )
-                    ),
-                    vol.Optional(CONF_ENABLE_SYNC, default=False): selector.BooleanSelector(),
-                }
-            ),
+            data_schema=vol.Schema(schema_dict),
+            description_placeholders=placeholders if placeholders else None,
             errors=errors,
         )
 
@@ -288,7 +317,7 @@ class MatrixMessengerOptionsFlow(config_entries.OptionsFlow):
         current_rooms = list(_effective_rooms(self._entry).keys())
 
         room_options = [
-            selector.SelectOptionDict(value=rid, label=f"{name}  ({rid})")
+            selector.SelectOptionDict(value=rid, label=name)
             for rid, name in self._available_rooms.items()
         ]
 
@@ -300,7 +329,7 @@ class MatrixMessengerOptionsFlow(config_entries.OptionsFlow):
                         selector.SelectSelectorConfig(
                             options=room_options,
                             multiple=True,
-                            mode=selector.SelectSelectorMode.LIST,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
                     vol.Optional(

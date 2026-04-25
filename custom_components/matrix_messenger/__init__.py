@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -50,8 +51,10 @@ class PendingQuestion:
 @dataclass
 class MatrixEntryData:
     client: MatrixClient
+    display_names: dict[str, str] = field(default_factory=dict)
     pending_questions: dict[str, PendingQuestion] = field(default_factory=dict)
     sync_task: asyncio.Task | None = None
+    room_service_names: list[str] = field(default_factory=list)
 
 
 # ------------------------------------------------------------------
@@ -75,7 +78,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_id=entry.data.get(CONF_DEVICE_ID, ""),
     )
 
-    data = MatrixEntryData(client=client)
+    # Fetch room display names via direct state API (independent of sync state)
+    stored_rooms = _effective_rooms(entry)
+    try:
+        display_names = await client.async_get_room_names(list(stored_rooms.keys()))
+    except Exception:
+        _LOGGER.debug("Could not fetch room display names – falling back to stored names")
+        display_names = dict(stored_rooms)
+
+    data = MatrixEntryData(client=client, display_names=display_names)
     hass.data[DOMAIN][entry.entry_id] = data
 
     async def on_message(room: Any, event: Any) -> None:
@@ -106,9 +117,21 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _cancel_sync(data)
         await data.client.async_close()
 
-    for service_name in ("send_message", "ask_question"):
+    all_services = ["send_message", "ask_question", "send_to_user"]
+    if data:
+        all_services.extend(data.room_service_names)
+    for service_name in all_services:
         if hass.services.has_service(DOMAIN, service_name):
             hass.services.async_remove(DOMAIN, service_name)
+
+    # Remove injected descriptions from cache so stale entries don't linger
+    try:
+        from homeassistant.loader import SERVICE_DESCRIPTION_CACHE as _cache_key
+    except ImportError:
+        _cache_key = "service_description_cache"
+    cache = hass.data.get(_cache_key, {})
+    for svc in ["send_message", "ask_question"] + (data.room_service_names if data else []):
+        cache.pop((DOMAIN, svc), None)
 
     await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     return True
@@ -122,6 +145,96 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
 # ------------------------------------------------------------------
 # Service registration
 # ------------------------------------------------------------------
+
+
+def _inject_service_descriptions(
+    hass: HomeAssistant,
+    rooms: dict[str, str],
+    room_service_names: list[str],
+    display_names: dict[str, str] | None = None,
+) -> None:
+    """Inject dynamic service descriptions so HA shows friendly dropdowns and text fields."""
+    try:
+        from homeassistant.loader import SERVICE_DESCRIPTION_CACHE as _cache_key
+    except ImportError:
+        _cache_key = "service_description_cache"  # legacy fallback
+
+    cache: dict = hass.data.setdefault(_cache_key, {})
+    labels = display_names or {}
+
+    msg_field = {
+        "name": "Nachricht",
+        "description": "Der zu sendende Text.",
+        "required": True,
+        "selector": {"text": {"multiline": True}},
+    }
+    room_options = [
+        {"value": rid, "label": labels.get(rid) or stored or rid}
+        for rid, stored in rooms.items()
+    ]
+    room_field = {
+        "name": "Raum",
+        "description": "Wähle einen konfigurierten Matrix-Raum.",
+        "required": True,
+        "selector": {"select": {"options": room_options, "mode": "dropdown"}},
+    }
+
+    cache[(DOMAIN, "send_message")] = {
+        "name": "Matrix-Nachricht senden",
+        "description": "Sendet eine Textnachricht an einen konfigurierten Matrix-Raum.",
+        "fields": {"room_id": room_field, "message": msg_field},
+    }
+    cache[(DOMAIN, "ask_question")] = {
+        "name": "Frage in Matrix-Raum stellen",
+        "description": (
+            "Sendet eine Frage und wartet auf Antwort (Text oder Emoji-Reaktion). "
+            "Löst das Event 'matrix_messenger_response' aus."
+        ),
+        "fields": {
+            "room_id": room_field,
+            "question": {
+                "name": "Frage",
+                "description": "Der Fragetext.",
+                "required": True,
+                "selector": {"text": {"multiline": True}},
+            },
+            "options": {
+                "name": "Antwortoptionen",
+                "description": "Optionale Liste gültiger Antworten. Leer = jede Antwort.",
+                "required": False,
+                "selector": {"object": {}},
+            },
+            "timeout": {
+                "name": "Timeout (Sekunden)",
+                "description": "Wartezeit. Standard: 1800 s (30 Minuten).",
+                "required": False,
+                "default": DEFAULT_QUESTION_TIMEOUT,
+                "selector": {
+                    "number": {"min": 60, "max": 7200, "step": 60, "unit_of_measurement": "s", "mode": "box"}
+                },
+            },
+        },
+    }
+
+    for service_name in room_service_names:
+        slug = service_name[len("send_to_"):]
+        room_id = next(
+            (rid for rid, name in rooms.items() if _room_slug(name) == slug),
+            None,
+        )
+        label = (labels.get(room_id) or rooms.get(room_id) or slug) if room_id else slug
+        cache[(DOMAIN, service_name)] = {
+            "name": f"Matrix → {label}",
+            "description": f'Sendet eine Nachricht an den Matrix-Raum "{label}".',
+            "fields": {"message": msg_field},
+        }
+
+
+def _room_slug(name: str) -> str:
+    """Convert a room display name to a valid HA service name fragment."""
+    slug = name.lower()
+    slug = re.sub(r"[^a-z0-9]+", "_", slug).strip("_")
+    return slug or "room"
 
 
 def _register_services(
@@ -144,7 +257,6 @@ def _register_services(
         options: list[str] = call.data.get("options", [])
         timeout: int = call.data.get("timeout", DEFAULT_QUESTION_TIMEOUT)
 
-        # Assemble full message text
         text = question
         if options:
             text = f"{question}\n\nMögliche Antworten: {' / '.join(options)}"
@@ -160,12 +272,18 @@ def _register_services(
         )
         _LOGGER.debug("Frage %s wartet auf Antwort in Raum %s", qid, room_id)
 
-        # Start a temporary sync loop if none is running
         if data.sync_task is None or data.sync_task.done():
             data.sync_task = hass.async_create_background_task(
                 _sync_loop(hass, entry, data, stop_when_idle=True),
                 name=f"{DOMAIN}_sync_{entry.entry_id}",
             )
+
+    async def handle_send_to_user(call: ServiceCall) -> None:
+        user_id: str = call.data["user_id"]
+        message: str = call.data["message"]
+        success = await data.client.async_send_to_user(user_id, message)
+        if not success:
+            _LOGGER.error("Direktnachricht an %s konnte nicht gesendet werden", user_id)
 
     hass.services.async_register(
         DOMAIN,
@@ -194,6 +312,50 @@ def _register_services(
             }
         ),
     )
+
+    hass.services.async_register(
+        DOMAIN,
+        "send_to_user",
+        handle_send_to_user,
+        schema=vol.Schema(
+            {
+                vol.Required("user_id"): str,
+                vol.Required("message"): str,
+            }
+        ),
+    )
+
+    # Per-room convenience services: matrix_messenger.send_to_<slug>
+    # (registered first so room_service_names is populated before injection)
+    used_slugs: set[str] = set()
+    for room_id, room_name in rooms.items():
+        base = _room_slug(room_name)
+        slug = base
+        counter = 2
+        while slug in used_slugs:
+            slug = f"{base}_{counter}"
+            counter += 1
+        used_slugs.add(slug)
+
+        service_name = f"send_to_{slug}"
+        data.room_service_names.append(service_name)
+
+        def _make_handler(rid: str, rname: str):
+            async def handler(call: ServiceCall) -> None:
+                msg: str = call.data["message"]
+                success = await data.client.async_send_message(rid, msg)
+                if not success:
+                    _LOGGER.error("Nachricht an %s (%s) konnte nicht gesendet werden", rname, rid)
+            return handler
+
+        hass.services.async_register(
+            DOMAIN,
+            service_name,
+            _make_handler(room_id, room_name),
+            schema=vol.Schema({vol.Required("message"): str}),
+        )
+
+    _inject_service_descriptions(hass, rooms, data.room_service_names, data.display_names)
 
 
 # ------------------------------------------------------------------

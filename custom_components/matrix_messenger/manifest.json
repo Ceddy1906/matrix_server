@@ -7,6 +7,6 @@
   "homeassistant": "2026.4.0",
   "iot_class": "cloud_push",
   "requirements": ["matrix-nio[e2e]>=0.21.0"],
-  "version": "1.0.0",
+  "version": "1.1.0",
   "integration_type": "hub"
 }
