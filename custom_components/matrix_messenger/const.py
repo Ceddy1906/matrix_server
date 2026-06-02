@@ -10,6 +10,7 @@ CONF_DEVICE_ID = "device_id"
 CONF_DEVICE_NAME = "device_name"
 CONF_ROOMS = "rooms"
 CONF_ENABLE_SYNC = "enable_sync"
+CONF_ACCOUNT_LABEL = "account_label"
 
 AUTH_METHOD_PASSWORD = "password"
 AUTH_METHOD_TOKEN = "token"

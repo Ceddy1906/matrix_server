@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Background -->
+  <rect width="256" height="256" rx="48" ry="48" fill="#1A1A2E"/>
+
+  <!-- Speech bubble body -->
+  <path d="M36,52 Q36,36 52,36 H204 Q220,36 220,52 V152 Q220,168 204,168 H152 L128,200 L104,168 H52 Q36,168 36,152 Z" fill="#5B2D8E"/>
+
+  <!-- Left bracket [ -->
+  <rect x="60" y="78" width="11" height="60" rx="3" fill="#FFFFFF"/>
+  <rect x="60" y="78" width="26" height="11" rx="3" fill="#FFFFFF"/>
+  <rect x="60" y="127" width="26" height="11" rx="3" fill="#FFFFFF"/>
+
+  <!-- Right bracket ] -->
+  <rect x="185" y="78" width="11" height="60" rx="3" fill="#FFFFFF"/>
+  <rect x="170" y="78" width="26" height="11" rx="3" fill="#FFFFFF"/>
+  <rect x="170" y="127" width="26" height="11" rx="3" fill="#FFFFFF"/>
+
+  <!-- M letter -->
+  <polyline
+    points="97,132 97,84 128,114 159,84 159,132"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Signal dots (communication) bottom-right badge -->
+  <circle cx="196" cy="196" r="36" fill="#03DAC6"/>
+  <circle cx="184" cy="196" r="7" fill="#1A1A2E"/>
+  <circle cx="196" cy="196" r="7" fill="#1A1A2E"/>
+  <circle cx="208" cy="196" r="7" fill="#1A1A2E"/>
+</svg>

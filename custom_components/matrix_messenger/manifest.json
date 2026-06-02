@@ -1,12 +1,15 @@
 {
   "domain": "matrix_messenger",
   "name": "Matrix Messenger",
-  "codeowners": [],
+  "version": "1.2.0",
   "config_flow": true,
-  "documentation": "",
-  "homeassistant": "2026.4.0",
-  "iot_class": "cloud_push",
+  "documentation": "https://github.com/CeddysHomeAssistant/Matrix-Server",
+  "issue_tracker": "https://github.com/CeddysHomeAssistant/Matrix-Server/issues",
+  "codeowners": ["@CeddysHomeAssistant"],
   "requirements": ["matrix-nio[e2e]>=0.21.0"],
-  "version": "1.1.0",
-  "integration_type": "hub"
+  "dependencies": [],
+  "iot_class": "cloud_push",
+  "integration_type": "hub",
+  "homeassistant": "2026.4.0",
+  "icon": "mdi:matrix"
 }

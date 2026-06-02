@@ -5,8 +5,12 @@
         "title": "Matrix Server",
         "description": "Connect Home Assistant to your Matrix homeserver.",
         "data": {
+          "account_label": "Account label (e.g. 'marc' or 'ha_chaos')",
           "homeserver": "Homeserver URL",
           "auth_method": "Authentication method"
+        },
+        "data_description": {
+          "account_label": "Short name for this account. Used as prefix in service names (lowercase letters, digits, underscores only)."
         }
       },
       "credentials_password": {
@@ -26,16 +30,18 @@
         }
       },
       "rooms": {
-        "title": "Select Matrix Rooms",
-        "description": "Choose the rooms you want to send messages to.",
+        "title": "Matrix Rooms",
+        "description": "Rooms are optional. Bridge accounts (WhatsApp, Signal, Telegram) do not need rooms – the 'Send direct message' service is sufficient.",
         "data": {
-          "rooms": "Rooms",
+          "rooms": "Rooms (optional)",
+          "manual_room_ids": "Additional room IDs (comma- or space-separated)",
           "enable_sync": "Enable background sync (required to receive replies)"
         }
       }
     },
     "error": {
       "cannot_connect": "Could not connect to the Matrix server. Please check the URL and credentials.",
+      "invalid_label": "The label may only contain lowercase letters, digits, and underscores, and must start with a letter or digit (e.g. 'marc').",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
@@ -47,7 +53,7 @@
       "init": {
         "title": "Matrix Messenger – Options",
         "data": {
-          "rooms": "Rooms",
+          "rooms": "Rooms (optional)",
           "enable_sync": "Enable background sync"
         }
       }

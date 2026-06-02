@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -12,6 +13,7 @@ from .const import (
     AUTH_METHOD_PASSWORD,
     AUTH_METHOD_TOKEN,
     CONF_ACCESS_TOKEN,
+    CONF_ACCOUNT_LABEL,
     CONF_AUTH_METHOD,
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
@@ -27,9 +29,11 @@ from .matrix_client import MatrixClient, MatrixClientError
 
 _LOGGER = logging.getLogger(__name__)
 
+_LABEL_RE = re.compile(r'^[a-z0-9][a-z0-9_]{0,29}$')
+
 
 class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Multi-step config flow: server → credentials → room selection."""
+    """Multi-step config flow: label + server → credentials → room selection."""
 
     VERSION = 1
 
@@ -38,21 +42,29 @@ class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._available_rooms: dict[str, str] = {}
 
     # ------------------------------------------------------------------
-    # Step 1: homeserver + auth method
+    # Step 1: account label + homeserver + auth method
     # ------------------------------------------------------------------
 
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
         if user_input is not None:
-            self._data.update(user_input)
-            if user_input[CONF_AUTH_METHOD] == AUTH_METHOD_PASSWORD:
-                return await self.async_step_credentials_password()
-            return await self.async_step_credentials_token()
+            label = user_input.get(CONF_ACCOUNT_LABEL, "").strip().lower()
+            if not _LABEL_RE.match(label):
+                errors[CONF_ACCOUNT_LABEL] = "invalid_label"
+            else:
+                self._data.update(user_input)
+                self._data[CONF_ACCOUNT_LABEL] = label
+                if user_input[CONF_AUTH_METHOD] == AUTH_METHOD_PASSWORD:
+                    return await self.async_step_credentials_password()
+                return await self.async_step_credentials_token()
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
                 {
+                    vol.Required(CONF_ACCOUNT_LABEL): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+                    ),
                     vol.Required(CONF_HOMESERVER): selector.TextSelector(
                         selector.TextSelectorConfig(type=selector.TextSelectorType.URL)
                     ),
@@ -152,7 +164,6 @@ class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 await client.async_setup()
-                # Fetch device_id from server using the provided token
                 _, device_id = await client.async_whoami_device_id(
                     user_input[CONF_ACCESS_TOKEN]
                 )
@@ -198,13 +209,10 @@ class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     # ------------------------------------------------------------------
-    # Step 3: room selection
+    # Step 3: room selection (optional – bridge-only accounts need no rooms)
     # ------------------------------------------------------------------
 
     async def async_step_rooms(self, user_input=None):
-        errors: dict[str, str] = {}
-        has_rooms = bool(self._available_rooms)
-
         if user_input is not None:
             selected = user_input.get(CONF_ROOMS, [])
             manual_raw = user_input.get("manual_room_ids", "").strip()
@@ -219,16 +227,12 @@ class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if rid:
                     rooms[rid] = rid
 
-            if not rooms:
-                errors["base"] = "no_rooms"
-            else:
-                self._data[CONF_ROOMS] = rooms
-                self._data[CONF_ENABLE_SYNC] = user_input.get(CONF_ENABLE_SYNC, False)
-                return self.async_create_entry(
-                    title=self._data.get(CONF_USERNAME, self._data[CONF_HOMESERVER]),
-                    data=self._data,
-                )
+            self._data[CONF_ROOMS] = rooms
+            self._data[CONF_ENABLE_SYNC] = user_input.get(CONF_ENABLE_SYNC, False)
+            label = self._data.get(CONF_ACCOUNT_LABEL) or self._data.get(CONF_USERNAME, self._data[CONF_HOMESERVER])
+            return self.async_create_entry(title=label, data=self._data)
 
+        has_rooms = bool(self._available_rooms)
         schema_dict: dict = {}
 
         if has_rooms:
@@ -236,35 +240,28 @@ class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.SelectOptionDict(value=rid, label=name)
                 for rid, name in self._available_rooms.items()
             ]
-            schema_dict[vol.Required(CONF_ROOMS)] = selector.SelectSelector(
+            schema_dict[vol.Optional(CONF_ROOMS, default=[])] = selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=room_options,
                     multiple=True,
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             )
-            schema_dict[vol.Optional("manual_room_ids", default="")] = selector.TextSelector(
-                selector.TextSelectorConfig(multiline=False)
-            )
-        else:
-            schema_dict[vol.Required("manual_room_ids")] = selector.TextSelector(
-                selector.TextSelectorConfig(multiline=True)
-            )
 
+        schema_dict[vol.Optional("manual_room_ids", default="")] = selector.TextSelector(
+            selector.TextSelectorConfig(multiline=False)
+        )
         schema_dict[vol.Optional(CONF_ENABLE_SYNC, default=False)] = selector.BooleanSelector()
-
-        placeholders = {}
-        if not has_rooms:
-            placeholders["hint"] = (
-                "Keine Räume gefunden. Raum-IDs eingeben (z.B. !abc123:chat.example.com), "
-                "mehrere mit Komma oder Leerzeichen trennen."
-            )
 
         return self.async_show_form(
             step_id="rooms",
             data_schema=vol.Schema(schema_dict),
-            description_placeholders=placeholders if placeholders else None,
-            errors=errors,
+            description_placeholders={
+                "hint": (
+                    "Räume sind optional. Bridge-Konten (WhatsApp, Signal, Telegram) "
+                    "benötigen keine Räume – dort genügt der Service 'Direktnachricht senden'."
+                )
+            },
         )
 
     @staticmethod
@@ -302,7 +299,6 @@ class MatrixMessengerOptionsFlow(config_entries.OptionsFlow):
                 },
             )
 
-        # Try to load fresh room list from the running client
         domain_data = self.hass.data.get(DOMAIN, {})
         entry_data = domain_data.get(self._entry.entry_id)
         if entry_data is not None:
@@ -325,7 +321,7 @@ class MatrixMessengerOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_ROOMS, default=current_rooms): selector.SelectSelector(
+                    vol.Optional(CONF_ROOMS, default=current_rooms): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=room_options,
                             multiple=True,
