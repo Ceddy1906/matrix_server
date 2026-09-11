@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 from typing import Any, Awaitable, Callable
 
@@ -18,6 +19,7 @@ from nio import (
     RoomSendResponse,
     SyncResponse,
     UnknownEvent,
+    UploadResponse,
     WhoamiResponse,
 )
 
@@ -213,6 +215,88 @@ class MatrixClient:
             _LOGGER.error("send_message fehlgeschlagen (%s): %s", room_id, resp)
             return False
         return True
+
+    async def async_send_image(
+        self, room_id: str, file_path: str, caption: str | None = None
+    ) -> bool:
+        """Upload a local image file and send it as m.image to a room.
+
+        Encrypts the file first if the target room is an E2EE room (uses
+        matrix-nio's attachment encryption; matrix media encryption is
+        separate from the E2EE-encrypted event content).
+        """
+        if not os.path.isfile(file_path):
+            _LOGGER.error("Bilddatei nicht gefunden: %s", file_path)
+            return False
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        filename = os.path.basename(file_path)
+        filesize = os.path.getsize(file_path)
+
+        width: int | None = None
+        height: int | None = None
+        try:
+            from PIL import Image  # noqa: PLC0415 - optional dependency
+
+            with Image.open(file_path) as img:
+                width, height = img.size
+        except Exception:
+            _LOGGER.debug("Konnte Bildmaße nicht ermitteln (Pillow fehlt oder kein Bild)")
+
+        room = self._client.rooms.get(room_id) if self._client else None
+        encrypt = bool(self._encryption_enabled and room is not None and getattr(room, "encrypted", False))
+
+        try:
+            with open(file_path, "rb") as f:
+                resp, keys = await self._client.upload(
+                    f,
+                    content_type=mime_type,
+                    filename=filename,
+                    filesize=filesize,
+                    encrypt=encrypt,
+                )
+        except Exception:
+            _LOGGER.exception("Bild-Upload fehlgeschlagen (%s)", file_path)
+            return False
+
+        if not isinstance(resp, UploadResponse):
+            _LOGGER.error("Bild-Upload fehlgeschlagen: %s", resp)
+            return False
+
+        info: dict[str, Any] = {"mimetype": mime_type, "size": filesize}
+        if width and height:
+            info["w"] = width
+            info["h"] = height
+
+        content: dict[str, Any] = {
+            "msgtype": "m.image",
+            "body": caption or filename,
+            "info": info,
+        }
+        if encrypt and keys:
+            keys["url"] = resp.content_uri
+            content["file"] = keys
+        else:
+            content["url"] = resp.content_uri
+
+        send_resp = await self._client.room_send(
+            room_id=room_id,
+            message_type="m.room.message",
+            content=content,
+        )
+        if not isinstance(send_resp, RoomSendResponse):
+            _LOGGER.error("send_image fehlgeschlagen (%s): %s", room_id, send_resp)
+            return False
+        return True
+
+    async def async_send_image_to_user(
+        self, user_id: str, file_path: str, caption: str | None = None
+    ) -> bool:
+        """Send an image as a direct/bridge message. Finds or creates a DM room."""
+        room_id = await self._find_or_create_dm(user_id)
+        if not room_id:
+            return False
+        return await self.async_send_image(room_id, file_path, caption)
 
     async def async_sync_once(self, timeout_ms: int = 5000, full_state: bool = False) -> None:
         """Perform one Matrix /sync call.

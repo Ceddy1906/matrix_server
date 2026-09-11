@@ -21,3 +21,32 @@ send_to_user:
       selector:
         text:
           multiline: true
+
+send_image_to_user:
+  name: Matrix-Bild als Direktnachricht senden
+  description: >
+    Sendet ein Bild per Direktnachricht oder Bridge (WhatsApp, Signal, Telegram)
+    an einen einzelnen Matrix-Benutzer.
+  fields:
+    user_id:
+      name: Benutzer-ID
+      description: "Matrix-Benutzer-ID (z. B. @max:matrix.org)."
+      required: true
+      example: "@max:matrix.org"
+      selector:
+        text:
+    image_path:
+      name: Bildpfad
+      description: >
+        Absoluter Pfad zur Bilddatei auf diesem Home-Assistant-Server
+        (muss unter "Zulässige externe Verzeichnisse" erlaubt sein).
+      required: true
+      example: "/config/www/schnappschuss.jpg"
+      selector:
+        text:
+    message:
+      name: Bildunterschrift
+      description: Optionaler Text zum Bild.
+      required: false
+      selector:
+        text:

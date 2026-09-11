@@ -119,11 +119,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await data.client.async_close()
 
     label = _effective_label(entry)
-    all_services = [
+    static_services = [
         f"{label}_send_message",
         f"{label}_ask_question",
         f"{label}_send_to_user",
+        f"{label}_send_image",
+        f"{label}_send_image_to_user",
     ]
+    all_services = list(static_services)
     if data:
         all_services.extend(data.room_service_names)
     for service_name in all_services:
@@ -135,11 +138,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except ImportError:
         _cache_key = "service_description_cache"
     cache = hass.data.get(_cache_key, {})
-    for svc in [
-        f"{label}_send_message",
-        f"{label}_ask_question",
-        f"{label}_send_to_user",
-    ] + (data.room_service_names if data else []):
+    for svc in static_services + (data.room_service_names if data else []):
         cache.pop((DOMAIN, svc), None)
 
     await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -200,6 +199,25 @@ def _inject_service_descriptions(
         "selector": {"text": {"multiline": True}},
     }
 
+    caption_field = {
+        "name": "Bildunterschrift",
+        "description": "Optionaler Text zum Bild. Leer = Dateiname.",
+        "required": False,
+        "selector": {"text": {}},
+    }
+
+    image_path_field = {
+        "name": "Bildpfad",
+        "description": (
+            "Absoluter Pfad zur Bilddatei auf diesem Home-Assistant-Server, "
+            "z. B. /config/www/schnappschuss.jpg. Der Pfad muss unter "
+            "Einstellungen → Allgemein → 'Zulässige externe Verzeichnisse' "
+            "erlaubt sein."
+        ),
+        "required": True,
+        "selector": {"text": {}},
+    }
+
     # send_to_user – immer verfügbar (Bridge-Nutzung)
     cache[(DOMAIN, f"{label}_send_to_user")] = {
         "name": f"Matrix DM senden [{label}]",
@@ -223,6 +241,24 @@ def _inject_service_descriptions(
         },
     }
 
+    cache[(DOMAIN, f"{label}_send_image_to_user")] = {
+        "name": f"Matrix DM-Bild senden [{label}]",
+        "description": (
+            "Sendet ein Bild per Direktnachricht oder Bridge (WhatsApp, Signal, Telegram) "
+            "an eine Matrix-User-ID."
+        ),
+        "fields": {
+            "user_id": {
+                "name": "Ziel-User-ID",
+                "description": "Matrix-User-ID des Empfängers.",
+                "required": True,
+                "selector": {"text": {}},
+            },
+            "image_path": image_path_field,
+            "message": caption_field,
+        },
+    }
+
     if not rooms:
         return
 
@@ -241,6 +277,15 @@ def _inject_service_descriptions(
         "name": f"Matrix-Nachricht senden [{label}]",
         "description": "Sendet eine Textnachricht an einen konfigurierten Matrix-Raum.",
         "fields": {"room_id": room_field, "message": msg_field},
+    }
+    cache[(DOMAIN, f"{label}_send_image")] = {
+        "name": f"Matrix-Bild senden [{label}]",
+        "description": "Sendet ein Bild an einen konfigurierten Matrix-Raum.",
+        "fields": {
+            "room_id": room_field,
+            "image_path": image_path_field,
+            "message": caption_field,
+        },
     }
     cache[(DOMAIN, f"{label}_ask_question")] = {
         "name": f"Frage in Matrix-Raum stellen [{label}]",
@@ -316,6 +361,33 @@ def _register_services(
         ),
     )
 
+    async def handle_send_image_to_user(call: ServiceCall) -> None:
+        user_id: str = call.data["user_id"]
+        image_path: str = call.data["image_path"]
+        message: str | None = call.data.get("message")
+        if not hass.config.is_allowed_path(image_path):
+            _LOGGER.error(
+                "Bildpfad nicht erlaubt (siehe 'Zulässige externe Verzeichnisse'): %s",
+                image_path,
+            )
+            return
+        success = await data.client.async_send_image_to_user(user_id, image_path, message)
+        if not success:
+            _LOGGER.error("Bild an %s konnte nicht gesendet werden", user_id)
+
+    hass.services.async_register(
+        DOMAIN,
+        f"{label}_send_image_to_user",
+        handle_send_image_to_user,
+        schema=vol.Schema(
+            {
+                vol.Required("user_id"): str,
+                vol.Required("image_path"): str,
+                vol.Optional("message"): str,
+            }
+        ),
+    )
+
     # Raum-basierte Services nur wenn Räume konfiguriert sind
     if room_ids:
         room_validator = vol.In(room_ids)
@@ -326,6 +398,20 @@ def _register_services(
             success = await data.client.async_send_message(room_id, message)
             if not success:
                 _LOGGER.error("Nachricht an %s konnte nicht gesendet werden", room_id)
+
+        async def handle_send_image(call: ServiceCall) -> None:
+            room_id: str = call.data["room_id"]
+            image_path: str = call.data["image_path"]
+            message: str | None = call.data.get("message")
+            if not hass.config.is_allowed_path(image_path):
+                _LOGGER.error(
+                    "Bildpfad nicht erlaubt (siehe 'Zulässige externe Verzeichnisse'): %s",
+                    image_path,
+                )
+                return
+            success = await data.client.async_send_image(room_id, image_path, message)
+            if not success:
+                _LOGGER.error("Bild an %s konnte nicht gesendet werden", room_id)
 
         async def handle_ask_question(call: ServiceCall) -> None:
             room_id: str = call.data["room_id"]
@@ -362,6 +448,19 @@ def _register_services(
                 {
                     vol.Required("room_id"): room_validator,
                     vol.Required("message"): str,
+                }
+            ),
+        )
+
+        hass.services.async_register(
+            DOMAIN,
+            f"{label}_send_image",
+            handle_send_image,
+            schema=vol.Schema(
+                {
+                    vol.Required("room_id"): room_validator,
+                    vol.Required("image_path"): str,
+                    vol.Optional("message"): str,
                 }
             ),
         )
