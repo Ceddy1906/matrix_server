@@ -1,0 +1,62 @@
+name: Release
+
+# Legt bei jedem gepushten Tag "v*" automatisch ein Gitea-Release an.
+# Release-Notizen = Commit-Betreffzeilen seit dem vorherigen Tag.
+# Benötigt einen Gitea-Actions-Runner mit git, curl und jq (Standard-Ubuntu-Image).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository klonen (inkl. Tags)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SERVER="${GITHUB_SERVER_URL:-${GITEA_SERVER_URL}}"
+          HOST="${SERVER#*://}"
+          git clone "${SERVER%%://*}://oauth2:${TOKEN}@${HOST}/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          git fetch --tags --force
+          git checkout --detach "${GITHUB_REF_NAME}"
+
+      - name: Version prüfen (Tag == manifest.json)
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          MANIFEST_VERSION=$(jq -r .version custom_components/matrix_messenger/manifest.json)
+          if [ "v${MANIFEST_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} passt nicht zu manifest.json (${MANIFEST_VERSION})" >&2
+            exit 1
+          fi
+
+      - name: Release-Notizen erzeugen
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          PREV=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then RANGE="${PREV}..${GITHUB_REF_NAME}"; else RANGE="${GITHUB_REF_NAME}"; fi
+          git log "$RANGE" --no-merges --format='- %s' > ../notes.md
+          cat ../notes.md
+
+      - name: Release anlegen
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SERVER="${GITHUB_SERVER_URL:-${GITEA_SERVER_URL}}"
+          API="${SERVER}/api/v1/repos/${GITHUB_REPOSITORY}"
+          BODY=$(jq -n \
+            --arg tag "${GITHUB_REF_NAME}" \
+            --arg name "${GITHUB_REF_NAME}" \
+            --rawfile body notes.md \
+            '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
+          curl -fsS -X POST "${API}/releases" \
+            -H "Authorization: token ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$BODY"
