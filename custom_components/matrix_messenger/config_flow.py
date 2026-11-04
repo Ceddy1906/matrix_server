@@ -310,7 +310,15 @@ class MatrixMessengerOptionsFlow(config_entries.OptionsFlow):
         if not self._available_rooms:
             self._available_rooms = _effective_rooms(self._entry)
 
-        current_rooms = list(_effective_rooms(self._entry).keys())
+        stored_rooms = _effective_rooms(self._entry)
+        current_rooms = list(stored_rooms.keys())
+
+        # Gespeicherte Räume, die aktuell nicht (mehr) in der Liste der
+        # beigetretenen Räume auftauchen, müssen trotzdem als Option vorhanden
+        # sein – sonst schlägt die Validierung der Vorauswahl fehl
+        # ("value must be one of [...]").
+        for rid, name in stored_rooms.items():
+            self._available_rooms.setdefault(rid, name)
 
         room_options = [
             selector.SelectOptionDict(value=rid, label=name)
