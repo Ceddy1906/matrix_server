@@ -1,0 +1,57 @@
+name: Release
+
+# Legt bei jedem gepushten Tag "v*" automatisch ein GitHub-Release an.
+# Release-Notizen = Commit-Betreffzeilen seit dem vorherigen Tag.
+# Manuell nachholbar (z. B. für einen bereits existierenden Tag):
+#   Actions → Release → Run workflow → Tag eintragen (z. B. v1.3.1)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existierender Tag, für den das Release angelegt wird (z. B. v1.3.1)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Version prüfen (Tag == manifest.json)
+        run: |
+          set -euo pipefail
+          MANIFEST_VERSION=$(jq -r .version custom_components/matrix_messenger/manifest.json)
+          if [ "v${MANIFEST_VERSION}" != "${TAG}" ]; then
+            echo "Tag ${TAG} passt nicht zu manifest.json (${MANIFEST_VERSION})" >&2
+            exit 1
+          fi
+
+      - name: Release-Notizen erzeugen
+        run: |
+          set -euo pipefail
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="${TAG}"; fi
+          git log "$RANGE" --no-merges --format='- %s' > notes.md
+          cat notes.md
+
+      - name: Release anlegen
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} existiert bereits – nichts zu tun."
+          else
+            gh release create "${TAG}" --title "${TAG}" --notes-file notes.md --verify-tag
+          fi

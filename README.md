@@ -35,7 +35,7 @@ Send messages from Home Assistant to [Matrix](https://matrix.org) rooms — incl
 ### Via HACS (recommended)
 
 1. Open HACS → **Integrations** → ⋮ → **Custom repositories**
-2. Add your Gitea repository URL, category: **Integration**
+2. Add `https://github.com/Ceddy1906/matrix_server`, category: **Integration**
 3. Search for **Matrix Messenger** and install
 4. Restart Home Assistant
 
