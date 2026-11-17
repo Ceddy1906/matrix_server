@@ -5,6 +5,7 @@ import logging
 import mimetypes
 import os
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlparse
 
 from nio import (
     AsyncClient,
@@ -28,6 +29,23 @@ _LOGGER = logging.getLogger(__name__)
 MessageCallback = Callable[[Any, Any], Awaitable[None]]
 
 
+def normalize_homeserver_url(url: str) -> str | None:
+    """Return a usable homeserver base URL, or None if the input is invalid.
+
+    Adds a missing scheme (default https) and strips trailing slashes, so
+    'talk.example.org' becomes 'https://talk.example.org'.
+    """
+    url = (url or "").strip()
+    if not url:
+        return None
+    if "://" not in url:
+        url = f"https://{url}"
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    return url.rstrip("/")
+
+
 class MatrixClientError(Exception):
     """Raised on unrecoverable Matrix client errors."""
 
@@ -36,7 +54,8 @@ class MatrixClient:
     """Async wrapper around nio.AsyncClient with E2EE and callback support."""
 
     def __init__(self, homeserver: str, user_id: str, store_path: str) -> None:
-        self._homeserver = homeserver
+        # Tolerate scheme-less URLs from existing config entries.
+        self._homeserver = normalize_homeserver_url(homeserver) or homeserver
         self._user_id = user_id
         self._store_path = store_path
         self._client: AsyncClient | None = None

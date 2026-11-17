@@ -10,7 +10,7 @@
           "auth_method": "Anmeldeverfahren"
         },
         "data_description": {
-          "account_label": "Kurzname für diesen Account. Wird Präfix der Service-Namen (nur Kleinbuchstaben, Ziffern, Unterstriche)."
+          "account_label": "Kurzname für diesen Account. Wird Präfix der Service-Namen. Erlaubt: Kleinbuchstaben, Ziffern, Unterstriche (max. 30). Andere Zeichen werden automatisch umgewandelt (z. B. Leerzeichen und - zu _)."
         }
       },
       "credentials_password": {
@@ -41,7 +41,9 @@
     },
     "error": {
       "cannot_connect": "Verbindung zum Matrix-Server fehlgeschlagen. Bitte URL und Zugangsdaten prüfen.",
-      "invalid_label": "Das Label darf nur Kleinbuchstaben, Ziffern und Unterstriche enthalten und muss mit einem Buchstaben oder einer Ziffer beginnen (z. B. 'marc').",
+      "label_in_use": "Dieses Label wird bereits von einem anderen Account verwendet. Bitte ein anderes wählen.",
+      "invalid_url": "Ungültige Homeserver-URL. Bitte z. B. 'https://matrix.example.org' angeben.",
+      "invalid_label": "Das Label muss mindestens einen Buchstaben oder eine Ziffer enthalten (z. B. 'marc').",
       "unknown": "Ein unerwarteter Fehler ist aufgetreten."
     },
     "abort": {

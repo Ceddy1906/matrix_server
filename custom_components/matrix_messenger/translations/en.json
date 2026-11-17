@@ -10,7 +10,7 @@
           "auth_method": "Authentication method"
         },
         "data_description": {
-          "account_label": "Short name for this account. Used as prefix in service names (lowercase letters, digits, underscores only)."
+          "account_label": "Short name for this account. Used as prefix in service names. Allowed: lowercase letters, digits, underscores (max. 30). Other characters are converted automatically (e.g. spaces and - become _)."
         }
       },
       "credentials_password": {
@@ -41,7 +41,9 @@
     },
     "error": {
       "cannot_connect": "Could not connect to the Matrix server. Please check the URL and credentials.",
-      "invalid_label": "The label may only contain lowercase letters, digits, and underscores, and must start with a letter or digit (e.g. 'marc').",
+      "label_in_use": "This label is already used by another account. Please choose a different one.",
+      "invalid_url": "Invalid homeserver URL. Please use something like 'https://matrix.example.org'.",
+      "invalid_label": "The label must contain at least one letter or digit (e.g. 'marc').",
       "unknown": "An unexpected error occurred."
     },
     "abort": {

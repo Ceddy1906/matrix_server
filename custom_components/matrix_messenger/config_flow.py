@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -25,11 +26,37 @@ from .const import (
     DEFAULT_DEVICE_NAME,
     DOMAIN,
 )
-from .matrix_client import MatrixClient, MatrixClientError
+from .matrix_client import MatrixClient, MatrixClientError, normalize_homeserver_url
 
 _LOGGER = logging.getLogger(__name__)
 
 _LABEL_RE = re.compile(r'^[a-z0-9][a-z0-9_]{0,29}$')
+
+_UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
+def sanitize_label(raw: str) -> str:
+    """Turn free-form input into a valid account label (may be empty).
+
+    Lowercases, transliterates umlauts, strips accents, replaces every other
+    character outside [a-z0-9] with '_' and trims/limits the result.
+    """
+    text = (raw or "").strip().lower().translate(_UMLAUTS)
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    text = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    return text[:30].rstrip("_")
+
+
+def _used_labels(entries) -> set[str]:
+    """Labels already taken by existing config entries."""
+    used: set[str] = set()
+    for entry in entries:
+        label = entry.data.get(CONF_ACCOUNT_LABEL, "").strip()
+        if not label:
+            # Mirrors the fallback in __init__._effective_label
+            label = sanitize_label(entry.data.get(CONF_USERNAME, "").split(":")[0].lstrip("@"))
+        used.add(label or "matrix")
+    return used
 
 
 class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -48,12 +75,18 @@ class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
         if user_input is not None:
-            label = user_input.get(CONF_ACCOUNT_LABEL, "").strip().lower()
+            label = sanitize_label(user_input.get(CONF_ACCOUNT_LABEL, ""))
+            homeserver = normalize_homeserver_url(user_input.get(CONF_HOMESERVER, ""))
             if not _LABEL_RE.match(label):
                 errors[CONF_ACCOUNT_LABEL] = "invalid_label"
+            elif label in _used_labels(self._async_current_entries()):
+                errors[CONF_ACCOUNT_LABEL] = "label_in_use"
+            elif homeserver is None:
+                errors[CONF_HOMESERVER] = "invalid_url"
             else:
                 self._data.update(user_input)
                 self._data[CONF_ACCOUNT_LABEL] = label
+                self._data[CONF_HOMESERVER] = homeserver
                 if user_input[CONF_AUTH_METHOD] == AUTH_METHOD_PASSWORD:
                     return await self.async_step_credentials_password()
                 return await self.async_step_credentials_token()
