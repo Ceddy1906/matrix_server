@@ -17,7 +17,9 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
+from .auth import run_with_reauth
 from .config_flow import _effective_rooms, _effective_sync
 from .const import (
     CONF_ACCESS_TOKEN,
@@ -30,7 +32,7 @@ from .const import (
     DOMAIN,
     EVENT_MATRIX_RESPONSE,
 )
-from .matrix_client import MatrixClient
+from .matrix_client import MatrixAuthError, MatrixClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,10 +77,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         store_path=store_path,
     )
     await client.async_setup()
-    await client.async_restore_login(
-        access_token=entry.data[CONF_ACCESS_TOKEN],
-        device_id=entry.data.get(CONF_DEVICE_ID, ""),
-    )
+    try:
+        await client.async_restore_login(
+            access_token=entry.data[CONF_ACCESS_TOKEN],
+            device_id=entry.data.get(CONF_DEVICE_ID, ""),
+        )
+        await client.async_verify_token()
+    except MatrixAuthError as err:
+        await client.async_close()
+        raise ConfigEntryAuthFailed(
+            "Der Matrix-Access-Token ist abgelaufen oder wurde widerrufen"
+        ) from err
+    except Exception as err:
+        await client.async_close()
+        raise ConfigEntryNotReady(f"Matrix-Server nicht erreichbar: {err}") from err
 
     stored_rooms = _effective_rooms(entry)
     try:
@@ -345,7 +357,7 @@ def _register_services(
     async def handle_send_to_user(call: ServiceCall) -> None:
         user_id: str = call.data["user_id"]
         message: str = call.data["message"]
-        success = await data.client.async_send_to_user(user_id, message)
+        success = await run_with_reauth(hass, entry, data.client.async_send_to_user(user_id, message))
         if not success:
             _LOGGER.error("Direktnachricht an %s konnte nicht gesendet werden", user_id)
 
@@ -371,7 +383,7 @@ def _register_services(
                 image_path,
             )
             return
-        success = await data.client.async_send_image_to_user(user_id, image_path, message)
+        success = await run_with_reauth(hass, entry, data.client.async_send_image_to_user(user_id, image_path, message))
         if not success:
             _LOGGER.error("Bild an %s konnte nicht gesendet werden", user_id)
 
@@ -395,7 +407,7 @@ def _register_services(
         async def handle_send_message(call: ServiceCall) -> None:
             room_id: str = call.data["room_id"]
             message: str = call.data["message"]
-            success = await data.client.async_send_message(room_id, message)
+            success = await run_with_reauth(hass, entry, data.client.async_send_message(room_id, message))
             if not success:
                 _LOGGER.error("Nachricht an %s konnte nicht gesendet werden", room_id)
 
@@ -409,7 +421,7 @@ def _register_services(
                     image_path,
                 )
                 return
-            success = await data.client.async_send_image(room_id, image_path, message)
+            success = await run_with_reauth(hass, entry, data.client.async_send_image(room_id, image_path, message))
             if not success:
                 _LOGGER.error("Bild an %s konnte nicht gesendet werden", room_id)
 
@@ -423,7 +435,7 @@ def _register_services(
             if options:
                 text = f"{question}\n\nMögliche Antworten: {' / '.join(options)}"
 
-            await data.client.async_send_message(room_id, text)
+            await run_with_reauth(hass, entry, data.client.async_send_message(room_id, text))
 
             qid = str(uuid.uuid4())
             data.pending_questions[qid] = PendingQuestion(
@@ -498,7 +510,7 @@ def _register_services(
             def _make_handler(rid: str, rname: str):
                 async def handler(call: ServiceCall) -> None:
                     msg: str = call.data["message"]
-                    success = await data.client.async_send_message(rid, msg)
+                    success = await run_with_reauth(hass, entry, data.client.async_send_message(rid, msg))
                     if not success:
                         _LOGGER.error("Nachricht an %s (%s) konnte nicht gesendet werden", rname, rid)
                 return handler
@@ -541,6 +553,10 @@ async def _sync_loop(
 
         except asyncio.CancelledError:
             raise
+        except MatrixAuthError:
+            _LOGGER.warning("Matrix-Token wurde abgelehnt – Re-Authentifizierung wird gestartet")
+            entry.async_start_reauth(hass)
+            return
         except Exception:
             _LOGGER.exception("Fehler im Matrix Sync-Loop")
 

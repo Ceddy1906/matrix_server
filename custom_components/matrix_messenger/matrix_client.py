@@ -50,6 +50,19 @@ class MatrixClientError(Exception):
     """Raised on unrecoverable Matrix client errors."""
 
 
+class MatrixAuthError(MatrixClientError):
+    """Raised when the homeserver rejects the access token (expired/revoked)."""
+
+
+_AUTH_ERROR_CODES = {"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"}
+
+
+def _raise_if_auth_error(resp: Any) -> None:
+    """Raise MatrixAuthError if a nio error response says the token is invalid."""
+    if getattr(resp, "status_code", None) in _AUTH_ERROR_CODES:
+        raise MatrixAuthError(getattr(resp, "message", "") or resp.status_code)
+
+
 class MatrixClient:
     """Async wrapper around nio.AsyncClient with E2EE and callback support."""
 
@@ -138,7 +151,20 @@ class MatrixClient:
         resp = await self._client.whoami()
         if isinstance(resp, WhoamiResponse):
             return resp.user_id or self._user_id, resp.device_id or ""
+        _raise_if_auth_error(resp)
         raise MatrixClientError(f"Konnte Gerätedaten nicht abrufen: {resp}")
+
+    async def async_verify_token(self) -> None:
+        """Check that the stored access token is still accepted by the server.
+
+        Raises MatrixAuthError if the token is expired/revoked and
+        MatrixClientError for any other failure.
+        """
+        resp = await self._client.whoami()
+        if isinstance(resp, WhoamiResponse):
+            return
+        _raise_if_auth_error(resp)
+        raise MatrixClientError(f"Token-Prüfung fehlgeschlagen: {resp}")
 
     # ------------------------------------------------------------------
     # Core operations
@@ -231,6 +257,7 @@ class MatrixClient:
             content={"msgtype": "m.text", "body": message},
         )
         if not isinstance(resp, RoomSendResponse):
+            _raise_if_auth_error(resp)
             _LOGGER.error("send_message fehlgeschlagen (%s): %s", room_id, resp)
             return False
         return True
@@ -279,6 +306,7 @@ class MatrixClient:
             return False
 
         if not isinstance(resp, UploadResponse):
+            _raise_if_auth_error(resp)
             _LOGGER.error("Bild-Upload fehlgeschlagen: %s", resp)
             return False
 
@@ -304,6 +332,7 @@ class MatrixClient:
             content=content,
         )
         if not isinstance(send_resp, RoomSendResponse):
+            _raise_if_auth_error(send_resp)
             _LOGGER.error("send_image fehlgeschlagen (%s): %s", room_id, send_resp)
             return False
         return True
@@ -325,6 +354,7 @@ class MatrixClient:
         """
         resp = await self._client.sync(timeout=timeout_ms, full_state=full_state or None)
         if not isinstance(resp, SyncResponse):
+            _raise_if_auth_error(resp)
             _LOGGER.debug("Sync fehlgeschlagen: %s", resp)
 
     async def async_send_to_user(self, user_id: str, message: str) -> bool:
@@ -363,6 +393,7 @@ class MatrixClient:
         resp = await self._client.room_create(is_direct=True, invite=[user_id])
         if isinstance(resp, RoomCreateResponse):
             return resp.room_id
+        _raise_if_auth_error(resp)
         _LOGGER.error("Konnte Raum für %s nicht erstellen: %s", user_id, resp)
         return None
 

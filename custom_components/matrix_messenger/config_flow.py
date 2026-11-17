@@ -26,7 +26,12 @@ from .const import (
     DEFAULT_DEVICE_NAME,
     DOMAIN,
 )
-from .matrix_client import MatrixClient, MatrixClientError, normalize_homeserver_url
+from .matrix_client import (
+    MatrixAuthError,
+    MatrixClient,
+    MatrixClientError,
+    normalize_homeserver_url,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -205,6 +210,8 @@ class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     device_id=device_id,
                 )
                 self._available_rooms = await client.async_get_joined_rooms()
+            except MatrixAuthError:
+                errors["base"] = "invalid_auth"
             except MatrixClientError as err:
                 _LOGGER.error("Token-Login fehlgeschlagen: %s", err)
                 errors["base"] = "cannot_connect"
@@ -239,6 +246,61 @@ class MatrixMessengerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "token_help": "Den Access Token findest du in deinem Matrix-Client unter Einstellungen → Sicherheit → Sitzungen."
             },
+        )
+
+    # ------------------------------------------------------------------
+    # Re-authentication: replace an expired or revoked access token
+    # ------------------------------------------------------------------
+
+    async def async_step_reauth(self, entry_data):
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            token = user_input[CONF_ACCESS_TOKEN].strip()
+            client = MatrixClient(
+                homeserver=entry.data[CONF_HOMESERVER],
+                user_id=entry.data[CONF_USERNAME],
+                store_path=self.hass.config.path(f".storage/{DOMAIN}"),
+            )
+            try:
+                await client.async_setup()
+                user_id, device_id = await client.async_whoami_device_id(token)
+            except MatrixAuthError:
+                errors["base"] = "invalid_auth"
+            except MatrixClientError as err:
+                _LOGGER.error("Re-Authentifizierung fehlgeschlagen: %s", err)
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unerwarteter Fehler bei der Re-Authentifizierung")
+                errors["base"] = "unknown"
+            else:
+                if user_id.lower() != entry.data[CONF_USERNAME].lower():
+                    errors["base"] = "wrong_account"
+                else:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data_updates={
+                            CONF_ACCESS_TOKEN: token,
+                            CONF_DEVICE_ID: device_id,
+                        },
+                    )
+            finally:
+                await client.async_close()
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ACCESS_TOKEN): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                    ),
+                }
+            ),
+            errors=errors,
+            description_placeholders={"username": entry.data[CONF_USERNAME]},
         )
 
     # ------------------------------------------------------------------

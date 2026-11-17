@@ -37,6 +37,13 @@
           "manual_room_ids": "Zusätzliche Raum-IDs (komma- oder leerzeichengetrennt)",
           "enable_sync": "Hintergrund-Sync aktivieren (für Antwortempfang)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Neu anmelden",
+        "description": "Der Access Token für {username} ist abgelaufen oder wurde widerrufen. Bitte trage einen neuen Token ein.\n\nBei Servern mit Matrix Authentication Service (MAS) laufen Tokens aus Element schnell ab. Stelle dann mit `mas-cli manage issue-compatibility-token <benutzername>` einen langlebigen Token aus.",
+        "data": {
+          "access_token": "Neuer Access Token"
+        }
       }
     },
     "error": {
@@ -44,10 +51,13 @@
       "label_in_use": "Dieses Label wird bereits von einem anderen Account verwendet. Bitte ein anderes wählen.",
       "invalid_url": "Ungültige Homeserver-URL. Bitte z. B. 'https://matrix.example.org' angeben.",
       "invalid_label": "Das Label muss mindestens einen Buchstaben oder eine Ziffer enthalten (z. B. 'marc').",
-      "unknown": "Ein unerwarteter Fehler ist aufgetreten."
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten.",
+      "invalid_auth": "Der Access Token ist ungültig, abgelaufen oder wurde widerrufen.",
+      "wrong_account": "Der Token gehört zu einem anderen Matrix-Account als dieser Eintrag."
     },
     "abort": {
-      "already_configured": "Diese Matrix-Instanz ist bereits konfiguriert."
+      "already_configured": "Diese Matrix-Instanz ist bereits konfiguriert.",
+      "reauth_successful": "Die Anmeldung wurde erneuert."
     }
   },
   "options": {

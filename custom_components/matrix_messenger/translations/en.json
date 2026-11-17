@@ -37,6 +37,13 @@
           "manual_room_ids": "Additional room IDs (comma- or space-separated)",
           "enable_sync": "Enable background sync (required to receive replies)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "The access token for {username} has expired or was revoked. Please enter a new token.\n\nOn servers using the Matrix Authentication Service (MAS), tokens copied from Element expire quickly. Issue a long-lived token with `mas-cli manage issue-compatibility-token <username>`.",
+        "data": {
+          "access_token": "New access token"
+        }
       }
     },
     "error": {
@@ -44,10 +51,13 @@
       "label_in_use": "This label is already used by another account. Please choose a different one.",
       "invalid_url": "Invalid homeserver URL. Please use something like 'https://matrix.example.org'.",
       "invalid_label": "The label must contain at least one letter or digit (e.g. 'marc').",
-      "unknown": "An unexpected error occurred."
+      "unknown": "An unexpected error occurred.",
+      "invalid_auth": "The access token is invalid, expired or was revoked.",
+      "wrong_account": "The token belongs to a different Matrix account than this entry."
     },
     "abort": {
-      "already_configured": "This Matrix instance is already configured."
+      "already_configured": "This Matrix instance is already configured.",
+      "reauth_successful": "Authentication was renewed."
     }
   },
   "options": {

@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .auth import run_with_reauth
 from .config_flow import _effective_rooms
 from .const import CONF_USERNAME, DOMAIN
 
@@ -68,7 +69,9 @@ class MatrixRoomNotifyEntity(NotifyEntity):
     async def async_send_message(self, message: str, title: str | None = None) -> None:
         """Sendet eine Nachricht. Optionaler Titel wird fett vorangestellt."""
         text = f"**{title}**\n{message}" if title else message
-        success = await self._data.client.async_send_message(self._room_id, text)
+        success = await run_with_reauth(
+            self.hass, self._entry, self._data.client.async_send_message(self._room_id, text)
+        )
         if not success:
             _LOGGER.error(
                 "notify: Nachricht an Raum %s konnte nicht gesendet werden", self._room_id
